@@ -1,0 +1,68 @@
+import nltk
+from nltk.corpus import stopwords
+from nltk.tokenize import word_tokenize
+from nltk.stem import WordNetLemmatizer
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.linear_model import LogisticRegression
+from flask import Flask, request, jsonify
+import string
+
+# Download necessary NLTK data
+nltk.download('punkt')
+nltk.download('stopwords')
+nltk.download('wordnet')
+
+# Preprocessing function
+def preprocess_text(text):
+    lemmatizer = WordNetLemmatizer()
+    stop_words = set(stopwords.words('english'))
+    tokens = word_tokenize(text)
+    tokens = [word.lower() for word in tokens if word.isalpha()]
+    tokens = [lemmatizer.lemmatize(word) for word in tokens if word not in stop_words]
+    return ' '.join(tokens)
+
+# Example training data
+intents = ['greeting', 'goodbye', 'order_status']
+samples = [
+    'Hi there!',
+    'Goodbye!',
+    'Can you tell me my order status?'
+]
+labels = [0, 1, 2]
+
+# Preprocess training samples
+processed_samples = [preprocess_text(sample) for sample in samples]
+
+# Vectorization
+vectorizer = TfidfVectorizer()
+X = vectorizer.fit_transform(processed_samples)
+y = labels
+
+# Training a simple model
+model = LogisticRegression()
+model.fit(X, y)
+
+# Predefined responses
+predefined_responses = {
+    'greeting': 'Hello! How can I assist you?',
+    'goodbye': 'Goodbye! Have a great day!',
+    'order_status': 'Please provide your order number.'
+}
+
+def generate_response(intent):
+    return predefined_responses.get(intent, "I'm sorry, I didn't understand that.")
+
+# Flask app for user interaction
+app = Flask(_name_)
+
+@app.route('/chat', methods=['POST'])
+def chat():
+    user_message = request.json.get('message')
+    processed_message = preprocess_text(user_message)
+    test_vector = vectorizer.transform([processed_message])
+    predicted_intent = model.predict(test_vector)[0]
+    response = generate_response(intents[predicted_intent])
+    return jsonify({'response': response})
+
+if _name_ == '_main_':
+    app.run(debug=True)
