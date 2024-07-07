@@ -1,0 +1,76 @@
+import cv2
+import torch
+import numpy as np
+
+# Load pre-trained YOLOv5 model
+model = torch.hub.load('ultralytics/yolov5', 'yolov5s')
+
+# Define Kalman Filter for tracking
+class KalmanFilter:
+    def _init_(self):
+        self.kf = cv2.KalmanFilter(4, 2)
+        self.kf.measurementMatrix = np.array([[1, 0, 0, 0], [0, 1, 0, 0]], np.float32)
+        self.kf.transitionMatrix = np.array([[1, 0, 1, 0], [0, 1, 0, 1], [0, 0, 1, 0], [0, 0, 0, 1]], np.float32)
+        self.kf.processNoiseCov = np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 5, 0], [0, 0, 0, 5]], np.float32) * 0.03
+
+    def predict(self):
+        return self.kf.predict()
+
+    def correct(self, coordX, coordY):
+        measurement = np.array([[np.float32(coordX)], [np.float32(coordY)]])
+        self.kf.correct(measurement)
+
+# Initialize video capture
+cap = cv2.VideoCapture('input_video.mp4')
+
+# Initialize Kalman Filters
+trackers = []
+
+while cap.isOpened():
+    ret, frame = cap.read()
+    if not ret:
+        break
+
+    # Object Detection
+    results = model(frame)
+
+    # Extract bounding boxes and scores
+    bboxes = results.xyxy[0].cpu().numpy()[:, :4]
+    scores = results.xyxy[0].cpu().numpy()[:, 4]
+
+    # Filter detections with a threshold
+    threshold = 0.3
+    detections = [(bbox, score) for bbox, score in zip(bboxes, scores) if score > threshold]
+
+    # Update and predict using Kalman Filter
+    new_trackers = []
+    for bbox, score in detections:
+        x1, y1, x2, y2 = bbox
+        center_x, center_y = (x1 + x2) / 2, (y1 + y2) / 2
+        if len(trackers) < len(detections):
+            kf = KalmanFilter()
+            kf.correct(center_x, center_y)
+            new_trackers.append(kf)
+        else:
+            for kf in trackers:
+                prediction = kf.predict()
+                kf.correct(center_x, center_y)
+                new_trackers.append(kf)
+                cv2.circle(frame, (int(prediction[0]), int(prediction[1])), 5, (0, 255, 0), -1)
+
+    trackers = new_trackers
+
+    # Draw bounding boxes
+    for bbox, score in detections:
+        x1, y1, x2, y2 = bbox
+        cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 2)
+
+    # Display the frame
+    cv2.imshow('Frame', frame)
+
+    # Break loop on 'q' key press
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+cap.release()
+cv2.destroyAllWindows()
